@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Fuel route</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body { background: #fff; }
+    body { font-family: Georgia, serif; margin: 0; color: #222; }
+    #bar { padding: 10px 12px; background: #f3f1ea; border-bottom: 1px solid #ddd; }
+    #bar input { padding: 6px 8px; width: 240px; margin-right: 6px; }
+    #bar button { padding: 6px 10px; }
+    #msg { margin-left: 10px; }
+    #map { height: 68vh; }
+    #stops { padding: 10px 14px 24px; font-size: 15px; background: #fff; color: #222; }
+    #stops div { padding: 3px 0; }
+  </style>
+</head>
+<body>
+  <form id="bar" method="get">
+    <input name="start" placeholder="Start, e.g. Chicago, IL" value="{{ start }}">
+    <input name="finish" placeholder="Finish, e.g. Denver, CO" value="{{ finish }}">
+    <button>Show route</button>
+    <span id="msg"></span>
+  </form>
+  <div id="map"></div>
+  <div id="stops"></div>
+  <script>
+    const map = L.map('map').setView([39.5, -98.3], 4);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 16,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    const params = new URLSearchParams(location.search);
+    if (params.get('start') && params.get('finish')) {
+      const msg = document.getElementById('msg');
+      msg.textContent = 'loading...';
+      fetch('/api/route/?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+          if (data.error) {
+            msg.textContent = data.error;
+            return;
+          }
+          const line = L.geoJSON(data.route, {style: {color: '#2255aa', weight: 4}}).addTo(map);
+          data.fuel_stops.forEach((s, i) => {
+            L.circleMarker([s.lat, s.lng], {radius: 7, color: '#b42318', fillOpacity: 0.9})
+              .bindPopup(s.name + '<br>' + s.city + ', ' + s.state + '<br>$' + s.price_per_gallon + '/gal, ' + s.gallons + ' gal')
+              .addTo(map);
+          });
+          L.marker([data.start.lat, data.start.lng]).bindPopup('Start').addTo(map);
+          L.marker([data.finish.lat, data.finish.lng]).bindPopup('Finish').addTo(map);
+          map.fitBounds(line.getBounds(), {padding: [24, 24]});
+          msg.textContent = data.distance_miles + ' mi, $' + data.total_cost_usd + ', ' + data.stop_count + ' stops';
+          const list = document.getElementById('stops');
+          data.fuel_stops.forEach((s, i) => {
+            const row = document.createElement('div');
+            row.textContent = (i + 1) + '. ' + s.name + ' — ' + s.city + ', ' + s.state
+              + ' — mile ' + s.mile + ' — ' + s.gallons + ' gal @ $' + s.price_per_gallon + ' = $' + s.cost;
+            list.appendChild(row);
+          });
+          if (!data.fuel_stops.length) {
+            list.textContent = 'No fuel stop. The full tank covers this trip.';
+          }
+        })
+        .catch(() => { msg.textContent = 'request failed'; });
+    }
+  </script>
+</body>
+</html>
